@@ -177,7 +177,7 @@ def browse_lnk():
 
 def browse_image():
     file_path = filedialog.askopenfilename(
-        filetypes=[("Supported files", "*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tiff;*.webp;*.ico;*.exe;*.dll;*.svg")]
+        filetypes=[("Supported files", "*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tiff;*.webp;*.ico;*.svg")]
     )
     png_entry.delete(0, tk.END)
     png_entry.insert(0, file_path)
@@ -219,50 +219,6 @@ def apply_icon():
         progress_var.set(30)  # Progress: Source directory validated
         root.update_idletasks()
 
-        # Handle EXE or DLL files
-        if png_or_url.lower().endswith(('.exe', '.dll')):
-            # Prompt the user to enter the index number
-            index = simpledialog.askinteger(
-                "Icon Index",
-                "Enter the resource index number for the icon:",
-                minvalue=0
-            )
-            if index is None:
-                messagebox.showerror("Error", "No index number entered. Operation cancelled.")
-                progress_var.set(0)  # Reset progress on error
-                root.update_idletasks()
-                return
-
-            # Update progress
-            progress_var.set(40)  # Progress: Index number provided
-            root.update_idletasks()
-
-            # Apply the icon using the index number
-            try:
-                # Normalize paths for compatibility
-                shortcut_path = os.path.normpath(lnk_path)
-                icon_path = os.path.normpath(f"{png_or_url},{index}")
-
-                # Apply the icon using Windows Script Host
-                shell = Dispatch("WScript.Shell")
-                shortcut = shell.CreateShortcut(shortcut_path)
-                shortcut.IconLocation = icon_path
-                shortcut.Save()
-
-                # Update progress and notify user
-                progress_var.set(100)  # Progress: Icon applied successfully
-                root.update_idletasks()
-                messagebox.showinfo("Success", f"Icon from '{png_or_url}' (index {index}) applied successfully!")
-
-                # Backup icon files (retaining this from your original code)
-                backup_ico_files()
-                return  # End function
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to apply icon from EXE or DLL: {e}")
-                progress_var.set(0)  # Reset progress on error
-                root.update_idletasks()
-                return
-
         # Handle URLs directly
         if png_or_url.startswith(("http://", "https://")):
             try:
@@ -282,7 +238,7 @@ def apply_icon():
                     # Detect the file extension based on MIME type
                     mime_type = response.headers.get("Content-Type")
                     extension = mimetypes.guess_extension(mime_type)
-                    if extension not in [".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tiff", ".webp", ".ico", ".exe", ".dll", ".svg"]:
+                    if extension not in [".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tiff", ".webp", ".ico", ".svg"]:
                         messagebox.showerror("Error", f"Unsupported file format: {extension}")
                         progress_var.set(0)  # Reset progress on error
                         root.update_idletasks()
@@ -405,7 +361,7 @@ def on_drop_lnk(event):
 
 def on_drop_image(event):
     image_path = event.data.strip('"').strip('{}')
-    if os.path.exists(image_path) and any(image_path.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.bmp', '.gif', '.tiff', '.webp', '.exe', '.dll', '.svg']):
+    if os.path.exists(image_path) and any(image_path.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.bmp', '.gif', '.tiff', '.webp', '.ico', '.svg']):
         png_entry.delete(0, tk.END)
         png_entry.insert(0, image_path)
     else:
