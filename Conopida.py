@@ -181,6 +181,9 @@ def browse_image():
 def apply_icon():
     global temp_image_path  # Track temporary clipboard image
 
+    # Initialize temp_png_path to avoid undefined variable errors
+    temp_png_path = None
+
     try:
         # Reset the progress bar
         progress_var.set(0)
@@ -287,9 +290,9 @@ def apply_icon():
         root.update_idletasks()
 
         # Cleanup temporary files
-        if os.path.exists(temp_image_path):
+        if temp_image_path and os.path.exists(temp_image_path):
             os.remove(temp_image_path)
-        if os.path.exists(temp_png_path):
+        if temp_png_path and os.path.exists(temp_png_path):
             os.remove(temp_png_path)
 
     except Exception as e:
