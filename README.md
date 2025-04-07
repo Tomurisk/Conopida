@@ -1,5 +1,7 @@
 # **Conopida: Icon Manager for Windows Shortcuts**
 
+![Demo](https://github.com/Tomurisk/Conopida/blob/main/Images/demo.gif)
+
 Conopida is a simple yet powerful application to manage icons for Windows shortcuts. With it, you can apply custom icons to `.lnk` files, convert SVG images, and organize icon files with ease.
 
 ### **Features:**
