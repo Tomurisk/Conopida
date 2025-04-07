@@ -239,16 +239,24 @@ def apply_icon():
 
             # Apply the icon using the index number
             try:
-                shell = win32com.client.Dispatch("WScript.Shell")
-                shortcut = shell.CreateShortcut(lnk_path)
-                shortcut.IconLocation = f"{png_or_url},{index}"
+                # Normalize paths for compatibility
+                shortcut_path = os.path.normpath(lnk_path)
+                icon_path = os.path.normpath(f"{png_or_url},{index}")
+
+                # Apply the icon using Windows Script Host
+                shell = Dispatch("WScript.Shell")
+                shortcut = shell.CreateShortcut(shortcut_path)
+                shortcut.IconLocation = icon_path
                 shortcut.Save()
+
+                # Update progress and notify user
                 progress_var.set(100)  # Progress: Icon applied successfully
                 root.update_idletasks()
-
                 messagebox.showinfo("Success", f"Icon from '{png_or_url}' (index {index}) applied successfully!")
+
+                # Backup icon files (retaining this from your original code)
                 backup_ico_files()
-                return  # End the function after handling EXE/DLL
+                return  # End function
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to apply icon from EXE or DLL: {e}")
                 progress_var.set(0)  # Reset progress on error
