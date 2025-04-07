@@ -90,31 +90,35 @@ def validate_sourcedir():
 
 def validate_backupdir():
     try:
+        # Check if the backup file exists
+        if not os.path.exists(BACKUP_DIR_FILE):
+            return None  # If the file doesn't exist, skip and return None
+
         # Read the contents of the file
         with open(BACKUP_DIR_FILE, 'r') as f:
             backup_dir = f.read().strip()
+
+        # If the backup directory is empty, contains only spaces or tabs, return None
+        if not backup_dir:
+            return None
+
+        # Ensure the path is absolute
+        if not os.path.isabs(backup_dir):
+            messagebox.showerror("Error", f"Invalid directory path in _backupdir.txt: '{backup_dir}' must be an absolute path!")
+            return None
+
+        # Attempt to create the directory if it doesn't exist
+        if not os.path.exists(backup_dir):
+            try:
+                os.makedirs(backup_dir)
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to create backup directory '{backup_dir}': {e}")
+                return None
+
+        return backup_dir
     except Exception as e:
         messagebox.showerror("Error", f"Failed to read _backupdir.txt: {e}")
         return None
-
-    # If the backup directory is empty, contains only spaces or tabs, silently skip
-    if not backup_dir:
-        return None
-
-    # Ensure the path is absolute
-    if not os.path.isabs(backup_dir):
-        messagebox.showerror("Error", f"Invalid directory path in _backupdir.txt: '{backup_dir}' must be an absolute path!")
-        return None
-
-    # Attempt to create the directory if it doesn't exist
-    if not os.path.exists(backup_dir):
-        try:
-            os.makedirs(backup_dir)
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to create backup directory '{backup_dir}': {e}")
-            return None
-
-    return backup_dir
 
 def backup_ico_files():
     # Validate the backup directory
