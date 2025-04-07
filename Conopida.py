@@ -313,7 +313,7 @@ def apply_icon():
                 root.update_idletasks()
 
                 # Convert the SVG into a PNG using CairoSVG
-                cairosvg.svg2png(url=png_or_url, write_to=temp_png_path)
+                cairosvg.svg2png(url=png_or_url, write_to=temp_png_path, output_width=300, output_height=300)
                 png_or_url = temp_png_path  # Use the converted PNG for further processing
                 progress_var.set(60)  # Progress: SVG converted to PNG
                 root.update_idletasks()
