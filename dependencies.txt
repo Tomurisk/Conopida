@@ -4,4 +4,3 @@ requests
 cairosvg
 pyinstaller
 tkinterdnd2
-pywin32
