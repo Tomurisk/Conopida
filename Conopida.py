@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, ttk, simpledialog
 import os
 import random
 import string
@@ -35,7 +35,7 @@ def convert_svg_to_png(svg_path, output_path):
 
 def read_directory_from_file(file_path):
     try:
-        with open(file_path, 'r') as f:
+        with open(file_path, 'r', encoding='utf-8') as f:
             directory = f.read().strip()
         return directory
     except Exception as e:
@@ -62,7 +62,7 @@ def validate_sourcedir():
 
     try:
         # Read the contents of the file
-        with open(SOURCE_DIR_FILE, 'r') as f:
+        with open(SOURCE_DIR_FILE, 'r', encoding='utf-8') as f:
             source_dir = f.read().strip()
     except Exception as e:
         messagebox.showerror("Error", f"Failed to read _sourcedir.txt: {e}")
@@ -95,7 +95,7 @@ def validate_backupdir():
             return None  # If the file doesn't exist, skip and return None
 
         # Read the contents of the file
-        with open(BACKUP_DIR_FILE, 'r') as f:
+        with open(BACKUP_DIR_FILE, 'r', encoding='utf-8') as f:
             backup_dir = f.read().strip()
 
         # If the backup directory is empty, contains only spaces or tabs, return None
@@ -197,6 +197,8 @@ def apply_icon():
         lnk_path = lnk_entry.get().strip()
         if not os.path.exists(lnk_path) or not lnk_path.lower().endswith(".lnk"):
             messagebox.showerror("Error", "Invalid shortcut file! Please enter a valid .lnk file.")
+            progress_var.set(0)  # Reset progress on error
+            root.update_idletasks()
             return
         progress_var.set(10)  # Progress: LNK path validated
         root.update_idletasks()
@@ -205,6 +207,8 @@ def apply_icon():
         png_or_url = png_entry.get().strip()
         if not png_or_url:
             messagebox.showerror("Error", "Image file path, URL, or input is empty!")
+            progress_var.set(0)  # Reset progress on error
+            root.update_idletasks()
             return
         progress_var.set(20)  # Progress: Image/URL validated
         root.update_idletasks()
@@ -215,15 +219,54 @@ def apply_icon():
         progress_var.set(30)  # Progress: Source directory validated
         root.update_idletasks()
 
-        # Prepare variables and paths
-        icon_save_path = None
+        # Handle EXE or DLL files
+        if png_or_url.lower().endswith(('.exe', '.dll')):
+            # Prompt the user to enter the index number
+            index = simpledialog.askinteger(
+                "Icon Index",
+                "Enter the resource index number for the icon:",
+                minvalue=0
+            )
+            if index is None:
+                messagebox.showerror("Error", "No index number entered. Operation cancelled.")
+                progress_var.set(0)  # Reset progress on error
+                root.update_idletasks()
+                return
+
+            # Update progress
+            progress_var.set(40)  # Progress: Index number provided
+            root.update_idletasks()
+
+            # Apply the icon using the index number
+            try:
+                shell = win32com.client.Dispatch("WScript.Shell")
+                shortcut = shell.CreateShortcut(lnk_path)
+                shortcut.IconLocation = f"{png_or_url},{index}"
+                shortcut.Save()
+                progress_var.set(100)  # Progress: Icon applied successfully
+                root.update_idletasks()
+
+                messagebox.showinfo("Success", f"Icon from '{png_or_url}' (index {index}) applied successfully!")
+                backup_ico_files()
+                return  # End the function after handling EXE/DLL
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to apply icon from EXE or DLL: {e}")
+                progress_var.set(0)  # Reset progress on error
+                root.update_idletasks()
+                return
 
         # Handle URLs directly
         if png_or_url.startswith(("http://", "https://")):
             try:
+                progress_var.set(40)  # Progress: URL detected
+                root.update_idletasks()
+
                 # Fetch the image from the URL
                 response = requests.get(png_or_url, stream=True, timeout=10)
                 if response.status_code == 200:
+                    progress_var.set(50)  # Progress: Image downloading
+                    root.update_idletasks()
+
                     # Use the system temp directory for the file
                     temp_dir = tempfile.gettempdir()
                     temp_image_path = os.path.join(temp_dir, "temp_downloaded_image")
@@ -233,39 +276,52 @@ def apply_icon():
                     extension = mimetypes.guess_extension(mime_type)
                     if extension not in [".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tiff", ".webp", ".ico", ".exe", ".dll", ".svg"]:
                         messagebox.showerror("Error", f"Unsupported file format: {extension}")
+                        progress_var.set(0)  # Reset progress on error
+                        root.update_idletasks()
                         return
 
                     temp_image_path += extension  # Add detected extension
                     with open(temp_image_path, 'wb') as temp_file:
                         temp_file.write(response.content)
                     png_or_url = temp_image_path  # Use this temporary file
+                    progress_var.set(60)  # Progress: Image downloaded
+                    root.update_idletasks()
                 else:
                     messagebox.showerror("Error", f"Failed to download image. Status code: {response.status_code}")
+                    progress_var.set(0)  # Reset progress on error
+                    root.update_idletasks()
                     return
             except requests.exceptions.RequestException as e:
                 messagebox.showerror("Error", f"Failed to fetch image from URL: {e}")
+                progress_var.set(0)  # Reset progress on error
+                root.update_idletasks()
                 return
-            progress_var.set(50)  # Progress: Image downloaded
-            root.update_idletasks()
 
         # Handle SVG files by converting to PNG
         if png_or_url.lower().endswith(".svg"):
             temp_png_path = os.path.join(tempfile.gettempdir(), "temp_converted_image.png")
             try:
+                progress_var.set(50)  # Progress: SVG detected
+                root.update_idletasks()
+
                 # Convert the SVG into a PNG using CairoSVG
                 cairosvg.svg2png(url=png_or_url, write_to=temp_png_path)
                 png_or_url = temp_png_path  # Use the converted PNG for further processing
+                progress_var.set(60)  # Progress: SVG converted to PNG
+                root.update_idletasks()
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to process SVG file: {e}")
+                progress_var.set(0)  # Reset progress on error
+                root.update_idletasks()
                 return
-            progress_var.set(60)  # Progress: SVG converted to PNG
-            root.update_idletasks()
 
         # Handle other input types (Clipboard, local files, etc.)
         elif png_or_url == "<clipboard input>":
             png_or_url = temp_image_path  # Use the retained clipboard image
             if not os.path.exists(png_or_url):
                 messagebox.showerror("Error", "Clipboard image not found or unsupported!")
+                progress_var.set(0)  # Reset progress on error
+                root.update_idletasks()
                 return
         progress_var.set(70)  # Progress: Input validated
         root.update_idletasks()
@@ -273,11 +329,13 @@ def apply_icon():
         # Generate the icon from the processed file
         try:
             icon_save_path = create_icon_with_multiple_sizes(png_or_url, source_dir)
+            progress_var.set(80)  # Progress: Icon created
+            root.update_idletasks()
         except Exception as e:
             messagebox.showerror("Error", f"Failed to create icon: {e}")
+            progress_var.set(0)  # Reset progress on error
+            root.update_idletasks()
             return
-        progress_var.set(80)  # Progress: Icon created
-        root.update_idletasks()
 
         # Apply the icon to the shortcut
         try:
@@ -285,13 +343,16 @@ def apply_icon():
             shortcut = shell.CreateShortcut(lnk_path)
             shortcut.IconLocation = icon_save_path
             shortcut.Save()
+            progress_var.set(100)  # Progress: Icon applied successfully
+            root.update_idletasks()
+
             messagebox.showinfo("Success", f"Icon applied successfully as '{os.path.basename(icon_save_path)}'!")
             backup_ico_files()
         except Exception as e:
             messagebox.showerror("Error", f"Failed to apply icon to shortcut: {e}")
+            progress_var.set(0)  # Reset progress on error
+            root.update_idletasks()
             return
-        progress_var.set(100)  # Progress: Icon applied successfully
-        root.update_idletasks()
 
         # Cleanup temporary files
         if temp_image_path and os.path.exists(temp_image_path):
