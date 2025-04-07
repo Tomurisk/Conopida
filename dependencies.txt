@@ -1,0 +1,6 @@
+pillow
+pywin32
+requests
+cairosvg
+pyinstaller
+tkinterdnd2
