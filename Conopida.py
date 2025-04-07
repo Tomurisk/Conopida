@@ -9,6 +9,7 @@ import shutil
 import tempfile
 import cairosvg
 import sys
+import mimetypes
 from PIL import Image, ImageGrab
 import win32com.client
 from tkinterdnd2 import TkinterDnD, DND_FILES
@@ -178,52 +179,130 @@ def browse_image():
     png_entry.insert(0, file_path)
 
 def apply_icon():
-    global temp_image_path
-    try:
-        # Read the shortcut path
-        lnk_path = lnk_entry.get()
+    global temp_image_path  # Track temporary clipboard image
 
-        # Validate input shortcut path
+    try:
+        # Reset the progress bar
+        progress_var.set(0)
+        root.update_idletasks()
+
+        # Get the shortcut (.lnk) path and validate
+        lnk_path = lnk_entry.get().strip()
         if not os.path.exists(lnk_path) or not lnk_path.lower().endswith(".lnk"):
             messagebox.showerror("Error", "Invalid shortcut file! Please enter a valid .lnk file.")
             return
+        progress_var.set(10)  # Progress: LNK path validated
+        root.update_idletasks()
 
-        # Get the image path from the entry field
-        png_or_url = png_entry.get()
-        if png_or_url == "<clipboard input>":
-            png_or_url = temp_image_path  # Use the retained clipboard image
+        # Get the image path or URL and validate
+        png_or_url = png_entry.get().strip()
+        if not png_or_url:
+            messagebox.showerror("Error", "Image file path, URL, or input is empty!")
+            return
+        progress_var.set(20)  # Progress: Image/URL validated
+        root.update_idletasks()
 
-        # Read the source directory
+        # Read the source directory and ensure it's valid
         source_dir = read_directory_from_file(SOURCE_DIR_FILE)
         ensure_valid_directory(source_dir)
+        progress_var.set(30)  # Progress: Source directory validated
+        root.update_idletasks()
 
-        # Process the image and create the icon
+        # Prepare variables and paths
+        icon_save_path = None
+
+        # Handle URLs directly
+        if png_or_url.startswith(("http://", "https://")):
+            try:
+                # Fetch the image from the URL
+                response = requests.get(png_or_url, stream=True, timeout=10)
+                if response.status_code == 200:
+                    # Use the system temp directory for the file
+                    temp_dir = tempfile.gettempdir()
+                    temp_image_path = os.path.join(temp_dir, "temp_downloaded_image")
+
+                    # Detect the file extension based on MIME type
+                    mime_type = response.headers.get("Content-Type")
+                    extension = mimetypes.guess_extension(mime_type)
+                    if extension not in [".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tiff", ".webp", ".ico", ".exe", ".dll", ".svg"]:
+                        messagebox.showerror("Error", f"Unsupported file format: {extension}")
+                        return
+
+                    temp_image_path += extension  # Add detected extension
+                    with open(temp_image_path, 'wb') as temp_file:
+                        temp_file.write(response.content)
+                    png_or_url = temp_image_path  # Use this temporary file
+                else:
+                    messagebox.showerror("Error", f"Failed to download image. Status code: {response.status_code}")
+                    return
+            except requests.exceptions.RequestException as e:
+                messagebox.showerror("Error", f"Failed to fetch image from URL: {e}")
+                return
+            progress_var.set(50)  # Progress: Image downloaded
+            root.update_idletasks()
+
+        # Handle SVG files by converting to PNG
         if png_or_url.lower().endswith(".svg"):
-            temp_png_path = os.path.join(source_dir, "converted_image.png")
-            convert_svg_to_png(png_or_url, temp_png_path)
-            icon_save_path = create_icon_with_multiple_sizes(temp_png_path, source_dir)
-            os.remove(temp_png_path)  # Clean up the temporary PNG file
-        elif any(png_or_url.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.bmp', '.gif', '.tiff', '.webp']):
+            temp_png_path = os.path.join(tempfile.gettempdir(), "temp_converted_image.png")
+            try:
+                # Convert the SVG into a PNG using CairoSVG
+                cairosvg.svg2png(url=png_or_url, write_to=temp_png_path)
+                png_or_url = temp_png_path  # Use the converted PNG for further processing
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to process SVG file: {e}")
+                return
+            progress_var.set(60)  # Progress: SVG converted to PNG
+            root.update_idletasks()
+
+        # Handle other input types (Clipboard, local files, etc.)
+        elif png_or_url == "<clipboard input>":
+            png_or_url = temp_image_path  # Use the retained clipboard image
+            if not os.path.exists(png_or_url):
+                messagebox.showerror("Error", "Clipboard image not found or unsupported!")
+                return
+        progress_var.set(70)  # Progress: Input validated
+        root.update_idletasks()
+
+        # Generate the icon from the processed file
+        try:
             icon_save_path = create_icon_with_multiple_sizes(png_or_url, source_dir)
-        else:
-            messagebox.showerror("Error", "Invalid image file, URL, or unsupported format!")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to create icon: {e}")
             return
+        progress_var.set(80)  # Progress: Icon created
+        root.update_idletasks()
 
         # Apply the icon to the shortcut
-        shell = win32com.client.Dispatch("WScript.Shell")
-        shortcut = shell.CreateShortcut(lnk_path)
-        shortcut.IconLocation = icon_save_path
-        shortcut.Save()
+        try:
+            shell = win32com.client.Dispatch("WScript.Shell")
+            shortcut = shell.CreateShortcut(lnk_path)
+            shortcut.IconLocation = icon_save_path
+            shortcut.Save()
+            messagebox.showinfo("Success", f"Icon applied successfully as '{os.path.basename(icon_save_path)}'!")
+            backup_ico_files()
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to apply icon to shortcut: {e}")
+            return
+        progress_var.set(100)  # Progress: Icon applied successfully
+        root.update_idletasks()
 
-        # Cleanup temporary clipboard image
+        # Cleanup temporary files
         if os.path.exists(temp_image_path):
             os.remove(temp_image_path)
-
-        messagebox.showinfo("Success", f"Icon applied successfully as '{os.path.basename(icon_save_path)}'!")
-        backup_ico_files()
+        if os.path.exists(temp_png_path):
+            os.remove(temp_png_path)
 
     except Exception as e:
-        messagebox.showerror("Error", f"An error occurred: {e}")
+        progress_var.set(0)  # Reset progress bar on error
+        root.update_idletasks()
+        messagebox.showerror("Error", f"An unexpected error occurred: {e}")
+
+def on_exit():
+    global temp_image_path
+    # Clean up temporary files on exit
+    if os.path.exists(temp_image_path):
+        os.remove(temp_image_path)
+    root.destroy()
 
 def on_exit():
     global temp_image_path
@@ -233,12 +312,20 @@ def on_exit():
     root.destroy()
 
 def on_drop_lnk(event):
-    lnk_path = event.data.strip('"').strip('{}')
+    # Get the dragged file path from the event
+    lnk_path = event.data.strip()  # Strip any unnecessary whitespace or characters
+
+    # Remove braces or quotes if present
+    if lnk_path.startswith("{") and lnk_path.endswith("}"):
+        lnk_path = lnk_path[1:-1]  # Remove the enclosing braces
+    lnk_path = lnk_path.strip('"')  # Remove surrounding quotes
+
+    # Validate that it's a .lnk file
     if os.path.exists(lnk_path) and lnk_path.lower().endswith(".lnk"):
-        lnk_entry.delete(0, tk.END)
-        lnk_entry.insert(0, lnk_path)
+        lnk_entry.delete(0, tk.END)  # Clear the entry field
+        lnk_entry.insert(0, lnk_path)  # Insert the valid file path
     else:
-        messagebox.showerror("Error", "Please drop a valid LNK file.")
+        messagebox.showerror("Error", "Please drop a valid .lnk file!")
 
 def on_drop_image(event):
     image_path = event.data.strip('"').strip('{}')
