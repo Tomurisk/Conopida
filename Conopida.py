@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk, simpledialog
+from tkinter import filedialog, messagebox, ttk
 import os
 import random
 import string
@@ -185,8 +185,9 @@ def browse_image():
 def apply_icon():
     global temp_image_path  # Track temporary clipboard image
 
-    # Initialize temp_png_path to avoid undefined variable errors
+    # Initialize temp variables to avoid undefined errors
     temp_png_path = None
+    temp_shortcut_path = None
 
     try:
         # Reset the progress bar
@@ -200,7 +201,14 @@ def apply_icon():
             progress_var.set(0)  # Reset progress on error
             root.update_idletasks()
             return
-        progress_var.set(10)  # Progress: LNK path validated
+
+        # Copy shortcut to the temp directory with a temporary name
+        temp_dir = tempfile.gettempdir()
+        temp_shortcut_name = f"temp_shortcut_{generate_crc32_name()}.lnk"
+        temp_shortcut_path = os.path.join(temp_dir, temp_shortcut_name)
+        shutil.copy(lnk_path, temp_shortcut_path)
+
+        progress_var.set(10)  # Progress: Shortcut copied to temp
         root.update_idletasks()
 
         # Get the image path or URL and validate
@@ -210,137 +218,171 @@ def apply_icon():
             progress_var.set(0)  # Reset progress on error
             root.update_idletasks()
             return
-        progress_var.set(20)  # Progress: Image/URL validated
-        root.update_idletasks()
 
-        # Read the source directory and ensure it's valid
-        source_dir = read_directory_from_file(SOURCE_DIR_FILE)
-        ensure_valid_directory(source_dir)
-        progress_var.set(30)  # Progress: Source directory validated
-        root.update_idletasks()
+        # Handle `.ico` files specifically with custom prompt
+        if png_or_url.lower().endswith(".ico"):
+            # Create a custom dialog box for "1" and "2" options
+            prompt = tk.Toplevel(root)
+            prompt.title("Choose Option")
 
-        # Handle URLs directly
-        if png_or_url.startswith(("http://", "https://")):
-            try:
-                progress_var.set(40)  # Progress: URL detected
+            # Dynamically center the prompt on the screen
+            prompt_width = 300
+            prompt_height = 150
+            screen_width = root.winfo_screenwidth()
+            screen_height = root.winfo_screenheight()
+            x_position = (screen_width // 2) - (prompt_width // 2)
+            y_position = (screen_height // 2) - (prompt_height // 2)
+            prompt.geometry(f"{prompt_width}x{prompt_height}+{x_position}+{y_position}")
+            prompt.resizable(False, False)
+
+            tk.Label(prompt, text="Use original path (1) or use source directory (2)?").pack(pady=20)
+
+            decision = tk.IntVar()  # Variable to store the user's decision
+
+            def use_original():
+                decision.set(1)
+                prompt.destroy()
+
+            def use_source():
+                decision.set(2)
+                prompt.destroy()
+
+            tk.Button(prompt, text="1", command=use_original, width=10).pack(side="left", padx=40, pady=10)
+            tk.Button(prompt, text="2", command=use_source, width=10).pack(side="right", padx=40, pady=10)
+
+            prompt.wait_window()  # Wait for the dialog to close
+
+            if decision.get() == 1:  # Option 1: Use the original `.ico` path
+                icon_path = png_or_url
+            elif decision.get() == 2:  # Option 2: Copy `.ico` to the source directory with CRC32-encoded name
+                source_dir = read_directory_from_file(SOURCE_DIR_FILE)
+                ensure_valid_directory(source_dir)
+                icon_name = f"{generate_crc32_name()}.ico"
+                icon_path = os.path.join(source_dir, icon_name)
+                shutil.copy(png_or_url, icon_path)
+            else:
+                # If no valid decision, cancel operation
+                messagebox.showinfo("Info", "Operation cancelled.")
+                progress_var.set(0)  # Reset progress bar
                 root.update_idletasks()
+                return
 
-                # Fetch the image from the URL
-                response = requests.get(png_or_url, stream=True, timeout=10)
-                if response.status_code == 200:
-                    progress_var.set(50)  # Progress: Image downloading
+            progress_var.set(50)  # Progress: Icon path confirmed
+            root.update_idletasks()
+        else:
+            # Handle web download
+            if png_or_url.startswith(("http://", "https://")):
+                try:
+                    progress_var.set(20)  # Progress: URL detected
                     root.update_idletasks()
 
-                    # Use the system temp directory for the file
-                    temp_dir = tempfile.gettempdir()
-                    temp_image_path = os.path.join(temp_dir, "temp_downloaded_image")
+                    # Fetch the image from the URL
+                    response = requests.get(png_or_url, stream=True, timeout=10)
+                    if response.status_code == 200:
+                        progress_var.set(30)  # Progress: Image downloading
+                        root.update_idletasks()
 
-                    # Detect the file extension based on MIME type
-                    mime_type = response.headers.get("Content-Type")
-                    extension = mimetypes.guess_extension(mime_type)
-                    if extension not in [".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tiff", ".webp", ".ico", ".svg"]:
-                        messagebox.showerror("Error", f"Unsupported file format: {extension}")
-                        progress_var.set(0)  # Reset progress on error
+                        # Use the system temp directory for the file
+                        temp_image_path = os.path.join(temp_dir, "temp_downloaded_image")
+                        mime_type = response.headers.get("Content-Type")
+                        extension = mimetypes.guess_extension(mime_type)
+
+                        if extension not in [".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tiff", ".webp", ".ico", ".svg"]:
+                            messagebox.showerror("Error", f"Unsupported file format: {extension}")
+                            progress_var.set(0)
+                            root.update_idletasks()
+                            return
+
+                        temp_image_path += extension
+                        with open(temp_image_path, 'wb') as temp_file:
+                            temp_file.write(response.content)
+                        png_or_url = temp_image_path
+                        progress_var.set(40)  # Progress: Image downloaded
+                        root.update_idletasks()
+                    else:
+                        messagebox.showerror("Error", f"Failed to download image. Status code: {response.status_code}")
+                        progress_var.set(0)
                         root.update_idletasks()
                         return
-
-                    temp_image_path += extension  # Add detected extension
-                    with open(temp_image_path, 'wb') as temp_file:
-                        temp_file.write(response.content)
-                    png_or_url = temp_image_path  # Use this temporary file
-                    progress_var.set(60)  # Progress: Image downloaded
-                    root.update_idletasks()
-                else:
-                    messagebox.showerror("Error", f"Failed to download image. Status code: {response.status_code}")
-                    progress_var.set(0)  # Reset progress on error
+                except requests.exceptions.RequestException as e:
+                    messagebox.showerror("Error", f"Failed to fetch image from URL: {e}")
+                    progress_var.set(0)
                     root.update_idletasks()
                     return
-            except requests.exceptions.RequestException as e:
-                messagebox.showerror("Error", f"Failed to fetch image from URL: {e}")
-                progress_var.set(0)  # Reset progress on error
-                root.update_idletasks()
-                return
 
-        # Handle SVG files by converting to PNG
-        if png_or_url.lower().endswith(".svg"):
-            temp_png_path = os.path.join(tempfile.gettempdir(), "temp_converted_image.png")
+            # Handle SVG files
+            if png_or_url.lower().endswith(".svg"):
+                temp_png_path = os.path.join(temp_dir, "temp_converted_image.png")
+                try:
+                    progress_var.set(50)  # Progress: SVG detected
+                    root.update_idletasks()
+
+                    # Convert the SVG into a PNG
+                    cairosvg.svg2png(url=png_or_url, write_to=temp_png_path, output_width=300, output_height=300)
+                    png_or_url = temp_png_path
+                    progress_var.set(60)  # Progress: SVG converted to PNG
+                    root.update_idletasks()
+                except Exception as e:
+                    messagebox.showerror("Error", f"Failed to process SVG file: {e}")
+                    progress_var.set(0)
+                    root.update_idletasks()
+                    return
+
+            # Generate ICO from other image types
             try:
-                progress_var.set(50)  # Progress: SVG detected
-                root.update_idletasks()
-
-                # Convert the SVG into a PNG using CairoSVG
-                cairosvg.svg2png(url=png_or_url, write_to=temp_png_path, output_width=300, output_height=300)
-                png_or_url = temp_png_path  # Use the converted PNG for further processing
-                progress_var.set(60)  # Progress: SVG converted to PNG
+                source_dir = read_directory_from_file(SOURCE_DIR_FILE)
+                ensure_valid_directory(source_dir)
+                icon_save_path = create_icon_with_multiple_sizes(png_or_url, source_dir)
+                icon_path = icon_save_path
+                progress_var.set(70)  # Progress: Icon created
                 root.update_idletasks()
             except Exception as e:
-                messagebox.showerror("Error", f"Failed to process SVG file: {e}")
-                progress_var.set(0)  # Reset progress on error
+                messagebox.showerror("Error", f"Failed to create icon: {e}")
+                progress_var.set(0)
                 root.update_idletasks()
                 return
 
-        # Handle other input types (Clipboard, local files, etc.)
-        elif png_or_url == "<clipboard input>":
-            png_or_url = temp_image_path  # Use the retained clipboard image
-            if not os.path.exists(png_or_url):
-                messagebox.showerror("Error", "Clipboard image not found or unsupported!")
-                progress_var.set(0)  # Reset progress on error
-                root.update_idletasks()
-                return
-        progress_var.set(70)  # Progress: Input validated
-        root.update_idletasks()
-
-        # Generate the icon from the processed file
-        try:
-            icon_save_path = create_icon_with_multiple_sizes(png_or_url, source_dir)
-            progress_var.set(80)  # Progress: Icon created
-            root.update_idletasks()
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to create icon: {e}")
-            progress_var.set(0)  # Reset progress on error
-            root.update_idletasks()
-            return
-
-        # Apply the icon to the shortcut
+        # Apply the icon to the shortcut in %temp%
         try:
             shell = win32com.client.Dispatch("WScript.Shell")
-            shortcut = shell.CreateShortcut(lnk_path)
-            shortcut.IconLocation = icon_save_path
+            shortcut = shell.CreateShortcut(temp_shortcut_path)
+            shortcut.IconLocation = icon_path
             shortcut.Save()
-            progress_var.set(100)  # Progress: Icon applied successfully
-            root.update_idletasks()
 
-            messagebox.showinfo("Success", f"Icon applied successfully as '{os.path.basename(icon_save_path)}'!")
-            backup_ico_files()
+            # Move shortcut back to original location
+            original_name = os.path.basename(lnk_path)
+            shutil.move(temp_shortcut_path, lnk_path)
+
+            progress_var.set(100)
+            root.update_idletasks()
+            messagebox.showinfo("Success", f"Icon applied successfully to '{lnk_path}'!")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to apply icon to shortcut: {e}")
-            progress_var.set(0)  # Reset progress on error
-            root.update_idletasks()
-            return
 
         # Cleanup temporary files
-        if temp_image_path and os.path.exists(temp_image_path):
-            os.remove(temp_image_path)
-        if temp_png_path and os.path.exists(temp_png_path):
-            os.remove(temp_png_path)
+        for temp_file in [temp_image_path, temp_png_path, temp_shortcut_path]:
+            if temp_file and os.path.exists(temp_file):
+                os.remove(temp_file)
 
     except Exception as e:
-        progress_var.set(0)  # Reset progress bar on error
-        root.update_idletasks()
         messagebox.showerror("Error", f"An unexpected error occurred: {e}")
 
 def on_exit():
-    global temp_image_path
-    # Clean up temporary files on exit
-    if os.path.exists(temp_image_path):
-        os.remove(temp_image_path)
-    root.destroy()
+    global temp_image_path, temp_shortcut_path  # Track temporary files globally
 
-def on_exit():
-    global temp_image_path
-    # Clean up temporary file on exit
-    if os.path.exists(temp_image_path):
+    # Clean up temporary clipboard images
+    if temp_image_path and os.path.exists(temp_image_path):
         os.remove(temp_image_path)
+
+    # Clean up temporary shortcuts in %temp%
+    temp_dir = tempfile.gettempdir()
+    for temp_file in os.listdir(temp_dir):
+        if temp_file.startswith("temp_shortcut_") and temp_file.endswith(".lnk"):
+            temp_path = os.path.join(temp_dir, temp_file)
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+
+    # Destroy the Tkinter root window
     root.destroy()
 
 def on_drop_lnk(event):
@@ -372,13 +414,16 @@ def delete_orphaned_icons():
         progress_var.set(0)  # Reset progress bar
         root.update_idletasks()
 
+        # Validate and ensure source directory exists
         source_dir = read_directory_from_file(SOURCE_DIR_FILE)
         ensure_valid_directory(source_dir)
         progress_var.set(20)  # Progress: Source directory validated
         root.update_idletasks()
 
+        # Validate backup directory
         backup_dir = validate_backupdir()
 
+        # Validate desktop path
         desktop_path = os.path.join(os.environ["USERPROFILE"], "Desktop")
         if not os.path.exists(desktop_path):
             messagebox.showerror("Error", "Desktop path not found!")
@@ -388,22 +433,35 @@ def delete_orphaned_icons():
         progress_var.set(40)  # Progress: Desktop path validated
         root.update_idletasks()
 
+        # Fetch all shortcuts from the desktop
         desktop_shortcuts = [os.path.join(desktop_path, f) for f in os.listdir(desktop_path) if f.lower().endswith(".lnk")]
         used_icons = set()
+
+        # Temporary directory for processing shortcuts
+        temp_dir = tempfile.gettempdir()
+        temp_shortcuts = []  # List to track temporary shortcuts
 
         shell = win32com.client.Dispatch("WScript.Shell")
         for shortcut_path in desktop_shortcuts:
             try:
-                shortcut = shell.CreateShortcut(shortcut_path)
+                # Copy each shortcut to %temp% with a unique CRC32-encoded name
+                temp_shortcut_name = f"temp_shortcut_{generate_crc32_name()}.lnk"
+                temp_shortcut_path = os.path.join(temp_dir, temp_shortcut_name)
+                shutil.copy(shortcut_path, temp_shortcut_path)
+                temp_shortcuts.append(temp_shortcut_path)
+
+                # Investigate the shortcut's icon location
+                shortcut = shell.CreateShortcut(temp_shortcut_path)
                 if shortcut.IconLocation:
                     icon_path = shortcut.IconLocation.split(",")[0]
                     used_icons.add(os.path.abspath(icon_path))
             except Exception as e:
-                print(f"Failed to read shortcut '{shortcut_path}': {e}")
+                print(f"Failed to process shortcut '{shortcut_path}': {e}")
 
         progress_var.set(60)  # Progress: Icons checked
         root.update_idletasks()
 
+        # Identify orphaned icons in the source directory
         orphaned_icons = []
         for file_name in os.listdir(source_dir):
             if file_name.lower().endswith(".ico"):
@@ -411,6 +469,7 @@ def delete_orphaned_icons():
                 if os.path.abspath(icon_path) not in used_icons:
                     orphaned_icons.append(icon_path)
 
+        # Delete orphaned icons
         for icon_path in orphaned_icons:
             try:
                 os.remove(icon_path)
@@ -420,25 +479,48 @@ def delete_orphaned_icons():
         progress_var.set(80)  # Progress: Orphaned icons deleted
         root.update_idletasks()
 
+        # Update the backup directory
         if backup_dir:
             try:
-                shutil.rmtree(backup_dir)
-                os.makedirs(backup_dir)
+                # Only clear files inside the last backup directory
+                for file_name in os.listdir(backup_dir):
+                    file_path = os.path.join(backup_dir, file_name)
+                    if os.path.isfile(file_path):  # Ensure it's a file, not a subfolder
+                        os.remove(file_path)
 
+                # Copy remaining `.ico` files into the backup directory
                 for file_name in os.listdir(source_dir):
                     if file_name.lower().endswith(".ico"):
                         shutil.copy(os.path.join(source_dir, file_name), os.path.join(backup_dir, file_name))
             except Exception as e:
                 messagebox.showwarning("Warning", f"Failed to update backup directory: {e}")
 
+        # Cleanup temporary shortcuts in %temp%
+        for temp_shortcut in temp_shortcuts:
+            try:
+                if os.path.exists(temp_shortcut):
+                    os.remove(temp_shortcut)
+            except Exception as e:
+                print(f"Failed to delete temporary shortcut '{temp_shortcut}': {e}")
+
         progress_var.set(100)  # Progress: Backup updated
         root.update_idletasks()
 
+        # Notify user of success
         messagebox.showinfo("Success", "Orphaned icons deleted and backup replaced successfully!")
 
     except Exception as e:
+        # Reset progress bar on error and notify user
         progress_var.set(0)
         messagebox.showerror("Error", f"An error occurred during orphaned icon deletion: {e}")
+
+        # Cleanup any leftover temporary shortcuts
+        temp_dir = tempfile.gettempdir()
+        for temp_file in os.listdir(temp_dir):
+            if temp_file.startswith("temp_shortcut_") and temp_file.endswith(".lnk"):
+                temp_path = os.path.join(temp_dir, temp_file)
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
 
 temp_image_path = ""  # Declare a global variable to track the temp file
 
@@ -477,11 +559,13 @@ def paste_image_from_clipboard():
         messagebox.showerror("Error", f"An error occurred: {e}")
 
 def revert_shortcut_icon():
+    global temp_shortcut_path  # Track temporary shortcut file
+
     try:
         progress_var.set(0)  # Reset progress bar
         root.update_idletasks()
 
-        lnk_path = lnk_entry.get()
+        lnk_path = lnk_entry.get().strip()
 
         # Validate shortcut path
         if not os.path.exists(lnk_path) or not lnk_path.lower().endswith(".lnk"):
@@ -489,34 +573,70 @@ def revert_shortcut_icon():
             progress_var.set(0)
             return
 
-        progress_var.set(20)  # Progress: Shortcut validated
+        # Copy shortcut to %temp% directory with a temporary name
+        temp_dir = tempfile.gettempdir()
+        temp_shortcut_name = f"temp_shortcut_{generate_crc32_name()}.lnk"
+        temp_shortcut_path = os.path.join(temp_dir, temp_shortcut_name)
+        shutil.copy(lnk_path, temp_shortcut_path)
+
+        progress_var.set(20)  # Progress: Shortcut copied to temp
         root.update_idletasks()
 
         shell = win32com.client.Dispatch("WScript.Shell")
-        shortcut = shell.CreateShortcut(lnk_path)
-
-        target_path = shortcut.TargetPath
-        if not os.path.exists(target_path):
-            messagebox.showerror("Error", f"Target file '{target_path}' does not exist. Cannot revert icon.")
-            progress_var.set(0)
-            return
-
-        progress_var.set(60)  # Progress: Target validated
-        root.update_idletasks()
 
         try:
-            shortcut.IconLocation = f"{target_path}, 0"
-            shortcut.Save()
-            progress_var.set(100)  # Progress: Icon reverted
+            # Create shortcut object from the temporary shortcut file
+            shortcut = shell.CreateShortcut(temp_shortcut_path)
+            target_path = shortcut.TargetPath
+
+            # Validate the target file path
+            if not os.path.exists(target_path):
+                messagebox.showerror("Error", f"Target file '{target_path}' does not exist. Cannot revert icon.")
+                progress_var.set(0)
+                return
+
+            progress_var.set(60)  # Progress: Target validated
             root.update_idletasks()
 
-            messagebox.showinfo("Success", f"Shortcut icon successfully reverted to the default icon of '{target_path}'.")
+            # Revert the icon to its default for the target file
+            shortcut.IconLocation = f"{target_path}, 0"
+            shortcut.Save()
+
+            progress_var.set(80)  # Progress: Icon reverted
+            root.update_idletasks()
+
+            # Restore the shortcut back to its original location
+            shutil.move(temp_shortcut_path, lnk_path)
+            progress_var.set(100)  # Progress: Shortcut restored
+            root.update_idletasks()
+
+            messagebox.showinfo("Success", f"Shortcut icon successfully reverted to the default icon of '{target_path}'!")
         except Exception as inner_error:
             progress_var.set(0)
             messagebox.showerror("Error", f"Failed to revert the shortcut icon: {inner_error}")
+            return
+
+        # Cleanup temporary shortcuts
+        temp_dir = tempfile.gettempdir()
+        for temp_file in os.listdir(temp_dir):
+            if temp_file.startswith("temp_shortcut_") and temp_file.endswith(".lnk"):
+                temp_path = os.path.join(temp_dir, temp_file)
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
 
     except Exception as e:
+        # Reset progress bar and handle unexpected errors
         progress_var.set(0)
+        root.update_idletasks()
+
+        # Cleanup temporary shortcuts in case of failure
+        temp_dir = tempfile.gettempdir()
+        for temp_file in os.listdir(temp_dir):
+            if temp_file.startswith("temp_shortcut_") and temp_file.endswith(".lnk"):
+                temp_path = os.path.join(temp_dir, temp_file)
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+
         messagebox.showerror("Error", f"An unexpected error occurred while reverting the shortcut: {e}")
 
 # Validation before launching GUI
