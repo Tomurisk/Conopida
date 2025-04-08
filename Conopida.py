@@ -219,6 +219,16 @@ def apply_icon():
             root.update_idletasks()
             return
 
+        # Replace <clipboard input> with the path of the clipboard image file
+        if png_or_url == "<clipboard input>":
+            if temp_image_path and os.path.exists(temp_image_path):
+                png_or_url = temp_image_path
+            else:
+                messagebox.showerror("Error", "Clipboard image not found or unsupported!")
+                progress_var.set(0)
+                root.update_idletasks()
+                return
+
         # Handle `.ico` files specifically with custom prompt
         if png_or_url.lower().endswith(".ico"):
             # Create a custom dialog box for "1" and "2" options
