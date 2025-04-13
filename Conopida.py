@@ -460,7 +460,6 @@ def delete_orphaned_icons():
             return  # File read error already shown
 
         if omit_errors:
-            # Even one invalid entry should stop everything
             error_msg = "The following issues were found in omitpurge.txt:\n\n"
             error_msg += "\n".join(omit_errors)
             error_msg += "\n\nProcess stopped to prevent data loss."
@@ -489,12 +488,18 @@ def delete_orphaned_icons():
         progress_var.set(40)
         root.update_idletasks()
 
-        # === STEP 5: Process shortcuts ===
-        desktop_shortcuts = [
-            os.path.join(desktop_path, f)
-            for f in os.listdir(desktop_path)
-            if f.lower().endswith(".lnk")
-        ]
+        # === STEP 5: Process shortcuts (including OMIT_PURGE_FILE paths) ===
+        directories_to_check = [desktop_path] + omit_dirs
+
+        desktop_shortcuts = []
+        for directory in directories_to_check:
+            if os.path.exists(directory):
+                desktop_shortcuts.extend([
+                    os.path.join(directory, f)
+                    for f in os.listdir(directory)
+                    if f.lower().endswith(".lnk")
+                ])
+
         used_icons = set()
         temp_dir = tempfile.gettempdir()
         temp_shortcuts = []
@@ -508,29 +513,28 @@ def delete_orphaned_icons():
                 temp_shortcuts.append(temp_shortcut_path)
 
                 shortcut = shell.CreateShortcut(temp_shortcut_path)
-                if shortcut.IconLocation:
-                    icon_path = shortcut.IconLocation.split(",")[0]
+                icon_path = os.path.expandvars(shortcut.IconLocation.split(",")[0].strip())
+                if icon_path and os.path.exists(icon_path):
                     used_icons.add(os.path.abspath(icon_path))
-            except Exception as e:
-                print(f"Failed to process shortcut '{shortcut_path}': {e}")
+
+            except Exception:
+                pass  # Silently ignore broken or unreadable shortcuts
 
         progress_var.set(60)
         root.update_idletasks()
 
         # === STEP 6: Identify orphaned icons ===
         orphaned_icons = []
-        for file_name in os.listdir(source_dir):
-            if file_name.lower().endswith(".ico"):
-                icon_path = os.path.abspath(os.path.join(source_dir, file_name))
+        for dir_to_check in [source_dir] + omit_dirs:
+            if os.path.exists(dir_to_check):
+                for file_name in os.listdir(dir_to_check):
+                    if file_name.lower().endswith(".ico"):
+                        icon_path = os.path.abspath(os.path.join(dir_to_check, file_name))
+                        if icon_path in used_icons:
+                            continue
+                        orphaned_icons.append(icon_path)
 
-                if icon_path in used_icons:
-                    continue
-
-                if any(icon_path.startswith(omit_dir) for omit_dir in omit_dirs):
-                    continue
-
-                orphaned_icons.append(icon_path)
-
+        # === STEP 7: Delete orphaned icons ===
         for icon_path in orphaned_icons:
             try:
                 os.remove(icon_path)
@@ -540,7 +544,7 @@ def delete_orphaned_icons():
         progress_var.set(80)
         root.update_idletasks()
 
-        # === STEP 7: Update backup ===
+        # === STEP 8: Update backup ===
         if backup_dir:
             try:
                 for file_name in os.listdir(backup_dir):
@@ -557,17 +561,16 @@ def delete_orphaned_icons():
             except Exception as e:
                 messagebox.showwarning("Warning", f"Failed to update backup directory: {e}")
 
-        # === STEP 8: Clean up temp shortcuts ===
+        # === STEP 9: Clean up temp shortcuts ===
         for temp_shortcut in temp_shortcuts:
             try:
                 if os.path.exists(temp_shortcut):
                     os.remove(temp_shortcut)
-            except Exception as e:
-                print(f"Failed to delete temporary shortcut '{temp_shortcut}': {e}")
+            except Exception:
+                pass  # Ignore if temp file is already gone
 
         progress_var.set(100)
         root.update_idletasks()
-
         messagebox.showinfo("Success", "Orphaned icons deleted and backup replaced successfully!")
 
     except Exception as e:
