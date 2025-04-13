@@ -25,6 +25,7 @@ else:
 # Paths for the source and backup directories
 SOURCE_DIR_FILE = os.path.join(BASE_DIR, "_sourcedir.txt")
 BACKUP_DIR_FILE = os.path.join(BASE_DIR, "_backupdir.txt")
+OMIT_PURGE_FILE = os.path.join(BASE_DIR, "_omitpurge.txt")
 
 def convert_svg_to_png(svg_path, output_path):
     try:
@@ -119,6 +120,33 @@ def validate_backupdir():
     except Exception as e:
         messagebox.showerror("Error", f"Failed to read _backupdir.txt: {e}")
         return None
+
+def validate_omitdir(file_path=OMIT_PURGE_FILE):
+    omit_dirs = []
+    errors = []
+
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            for line_num, line in enumerate(f, start=1):
+                omit_dir = line.strip()
+                if omit_dir:
+                    if not os.path.isabs(omit_dir):
+                        errors.append(f"Line {line_num}: '{omit_dir}' is not an absolute path.")
+                    elif not os.path.exists(omit_dir):
+                        errors.append(f"Line {line_num}: '{omit_dir}' does not exist.")
+                    else:
+                        omit_dirs.append(os.path.abspath(omit_dir))
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to read {file_path}: {e}")
+        return None, []
+
+    # Critical condition: no valid paths AND there were errors
+    if not omit_dirs and errors:
+        errors.append("\nProcess stopped to prevent data loss.")
+        messagebox.showerror("Validation Error", "\n".join(errors))
+        return None, []
+
+    return omit_dirs, errors
 
 def backup_ico_files():
     # Validate the backup directory
@@ -421,46 +449,64 @@ def on_drop_image(event):
 
 def delete_orphaned_icons():
     try:
-        progress_var.set(0)  # Reset progress bar
+        progress_var.set(0)
         root.update_idletasks()
 
-        # Validate and ensure source directory exists
+        # === STEP 1: Validate omitpurge.txt ===
+        omit_dirs, omit_errors = validate_omitdir()
+
+        if omit_dirs is None:
+            progress_var.set(0)
+            return  # File read error already shown
+
+        if omit_errors:
+            # Even one invalid entry should stop everything
+            error_msg = "The following issues were found in omitpurge.txt:\n\n"
+            error_msg += "\n".join(omit_errors)
+            error_msg += "\n\nProcess stopped to prevent data loss."
+            messagebox.showerror("Validation Error", error_msg)
+            progress_var.set(0)
+            return
+
+        omit_dirs = [os.path.abspath(omit) for omit in omit_dirs]
+
+        # === STEP 2: Validate source directory ===
         source_dir = read_directory_from_file(SOURCE_DIR_FILE)
         ensure_valid_directory(source_dir)
-        progress_var.set(20)  # Progress: Source directory validated
+        progress_var.set(20)
         root.update_idletasks()
 
-        # Validate backup directory
+        # === STEP 3: Validate backup directory ===
         backup_dir = validate_backupdir()
 
-        # Validate desktop path
+        # === STEP 4: Validate desktop path ===
         desktop_path = os.path.join(os.environ["USERPROFILE"], "Desktop")
         if not os.path.exists(desktop_path):
             messagebox.showerror("Error", "Desktop path not found!")
             progress_var.set(0)
             return
 
-        progress_var.set(40)  # Progress: Desktop path validated
+        progress_var.set(40)
         root.update_idletasks()
 
-        # Fetch all shortcuts from the desktop
-        desktop_shortcuts = [os.path.join(desktop_path, f) for f in os.listdir(desktop_path) if f.lower().endswith(".lnk")]
+        # === STEP 5: Process shortcuts ===
+        desktop_shortcuts = [
+            os.path.join(desktop_path, f)
+            for f in os.listdir(desktop_path)
+            if f.lower().endswith(".lnk")
+        ]
         used_icons = set()
-
-        # Temporary directory for processing shortcuts
         temp_dir = tempfile.gettempdir()
-        temp_shortcuts = []  # List to track temporary shortcuts
+        temp_shortcuts = []
 
         shell = win32com.client.Dispatch("WScript.Shell")
         for shortcut_path in desktop_shortcuts:
             try:
-                # Copy each shortcut to %temp% with a unique CRC32-encoded name
                 temp_shortcut_name = f"temp_shortcut_{generate_crc32_name()}.lnk"
                 temp_shortcut_path = os.path.join(temp_dir, temp_shortcut_name)
                 shutil.copy(shortcut_path, temp_shortcut_path)
                 temp_shortcuts.append(temp_shortcut_path)
 
-                # Investigate the shortcut's icon location
                 shortcut = shell.CreateShortcut(temp_shortcut_path)
                 if shortcut.IconLocation:
                     icon_path = shortcut.IconLocation.split(",")[0]
@@ -468,44 +514,50 @@ def delete_orphaned_icons():
             except Exception as e:
                 print(f"Failed to process shortcut '{shortcut_path}': {e}")
 
-        progress_var.set(60)  # Progress: Icons checked
+        progress_var.set(60)
         root.update_idletasks()
 
-        # Identify orphaned icons in the source directory
+        # === STEP 6: Identify orphaned icons ===
         orphaned_icons = []
         for file_name in os.listdir(source_dir):
             if file_name.lower().endswith(".ico"):
-                icon_path = os.path.join(source_dir, file_name)
-                if os.path.abspath(icon_path) not in used_icons:
-                    orphaned_icons.append(icon_path)
+                icon_path = os.path.abspath(os.path.join(source_dir, file_name))
 
-        # Delete orphaned icons
+                if icon_path in used_icons:
+                    continue
+
+                if any(icon_path.startswith(omit_dir) for omit_dir in omit_dirs):
+                    continue
+
+                orphaned_icons.append(icon_path)
+
         for icon_path in orphaned_icons:
             try:
                 os.remove(icon_path)
             except Exception as e:
                 messagebox.showwarning("Warning", f"Failed to delete orphaned icon '{icon_path}': {e}")
 
-        progress_var.set(80)  # Progress: Orphaned icons deleted
+        progress_var.set(80)
         root.update_idletasks()
 
-        # Update the backup directory
+        # === STEP 7: Update backup ===
         if backup_dir:
             try:
-                # Only clear files inside the last backup directory
                 for file_name in os.listdir(backup_dir):
                     file_path = os.path.join(backup_dir, file_name)
-                    if os.path.isfile(file_path):  # Ensure it's a file, not a subfolder
+                    if os.path.isfile(file_path):
                         os.remove(file_path)
 
-                # Copy remaining `.ico` files into the backup directory
                 for file_name in os.listdir(source_dir):
                     if file_name.lower().endswith(".ico"):
-                        shutil.copy(os.path.join(source_dir, file_name), os.path.join(backup_dir, file_name))
+                        shutil.copy(
+                            os.path.join(source_dir, file_name),
+                            os.path.join(backup_dir, file_name)
+                        )
             except Exception as e:
                 messagebox.showwarning("Warning", f"Failed to update backup directory: {e}")
 
-        # Cleanup temporary shortcuts in %temp%
+        # === STEP 8: Clean up temp shortcuts ===
         for temp_shortcut in temp_shortcuts:
             try:
                 if os.path.exists(temp_shortcut):
@@ -513,18 +565,16 @@ def delete_orphaned_icons():
             except Exception as e:
                 print(f"Failed to delete temporary shortcut '{temp_shortcut}': {e}")
 
-        progress_var.set(100)  # Progress: Backup updated
+        progress_var.set(100)
         root.update_idletasks()
 
-        # Notify user of success
         messagebox.showinfo("Success", "Orphaned icons deleted and backup replaced successfully!")
 
     except Exception as e:
-        # Reset progress bar on error and notify user
         progress_var.set(0)
         messagebox.showerror("Error", f"An error occurred during orphaned icon deletion: {e}")
 
-        # Cleanup any leftover temporary shortcuts
+        # Final cleanup
         temp_dir = tempfile.gettempdir()
         for temp_file in os.listdir(temp_dir):
             if temp_file.startswith("temp_shortcut_") and temp_file.endswith(".lnk"):

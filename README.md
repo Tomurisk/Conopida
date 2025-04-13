@@ -24,6 +24,8 @@ Before using Conopida, two important files must be configured to set up your dir
 
 2. **\_backupdir.txt**: This text file contains the directory path where the `.ico` backup files will be saved. When an icon is applied to a shortcut, the corresponding `.ico` file will be stored in this backup directory. The file should also contain the absolute path to the folder where backups should be stored (e.g., `C:\Users\YourName\IconBackups`).
 
+3. **_omitpurge.txt**: This text file is used to specify directories or paths that should be **excluded** from certain operations, such as purging orphaned icons. Any directory listed in this file will be **skipped** during processing to avoid accidental deletion or modification.
+
 Make sure these directories are valid and accessible by the program. If they are not set up correctly, Conopida will notify you to correct them.
 
 ---

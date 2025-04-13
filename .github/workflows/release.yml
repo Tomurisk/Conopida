@@ -49,8 +49,9 @@ jobs:
 
     - name: Create Release zip
       run: |
-        Copy-Item -Path _backupdir.txt -Destination release\
-        Copy-Item -Path _sourcedir.txt -Destination release\
+        New-Item -Path "release\_backupdir.txt" -ItemType File -Force
+        New-Item -Path "release\_sourcedir.txt" -ItemType File -Force
+        New-Item -Path "release\_omitpurge.txt" -ItemType File -Force
         Compress-Archive -Path release\* -DestinationPath Release.zip
 
     - name: Create GitHub Release using GitHub CLI
