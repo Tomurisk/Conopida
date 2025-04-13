@@ -36,7 +36,7 @@ def convert_svg_to_png(svg_path, output_path):
 
 def read_directory_from_file(file_path):
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, 'r', encoding='utf-8-sig') as f:
             directory = f.read().strip()
         return directory
     except Exception as e:
@@ -63,7 +63,7 @@ def validate_sourcedir():
 
     try:
         # Read the contents of the file
-        with open(SOURCE_DIR_FILE, 'r', encoding='utf-8') as f:
+        with open(SOURCE_DIR_FILE, 'r', encoding='utf-8-sig') as f:
             source_dir = f.read().strip()
     except Exception as e:
         messagebox.showerror("Error", f"Failed to read _sourcedir.txt: {e}")
@@ -96,7 +96,7 @@ def validate_backupdir():
             return None  # If the file doesn't exist, skip and return None
 
         # Read the contents of the file
-        with open(BACKUP_DIR_FILE, 'r', encoding='utf-8') as f:
+        with open(BACKUP_DIR_FILE, 'r', encoding='utf-8-sig') as f:
             backup_dir = f.read().strip()
 
         # If the backup directory is empty, contains only spaces or tabs, return None
@@ -126,7 +126,7 @@ def validate_omitdir(file_path=OMIT_PURGE_FILE):
     errors = []
 
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, 'r', encoding='utf-8-sig') as f:
             for line_num, line in enumerate(f, start=1):
                 omit_dir = line.strip()
                 if omit_dir:
